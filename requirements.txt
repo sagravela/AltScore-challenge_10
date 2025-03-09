@@ -1,0 +1,28 @@
+# Data loading
+fastexcel
+openpyxl
+
+# Data manipulation
+thefuzz
+polars
+
+# Geo libraries
+geopandas
+geopy
+h3
+h3ronpy
+
+# Machine learning
+scikit-learn
+xgboost
+lightgbm
+catboost
+
+# Data visualization
+altair
+folium
+
+# Utils
+requests
+tqdm
+optuna
