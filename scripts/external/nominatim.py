@@ -8,7 +8,12 @@ from scripts import logging
 from scripts import RAW_DATA_DIR, TRAIN_FILE, TEST_FILE, NOMINATIM_PATH, NOMINATIM_FILE
 
 
-def add_latlon(hex_ids: list[str]):
+def add_latlon(hex_ids: list[str]) -> list[dict]:
+    """Add latitude and longitude to a list of hex ids.
+
+    Parameters:
+        hex_ids (list[str]): A list of hex ids.
+    """
     return [
         {
             'hex_id': hex_id, 
@@ -17,7 +22,12 @@ def add_latlon(hex_ids: list[str]):
         } for hex_id, (lat, lon) in map(lambda x:(x, h3.cell_to_latlng(x)), hex_ids)
     ]
 
-def apply_geocode(locations: list[dict]):
+def apply_geocode(locations: list[dict]) -> list[dict]:
+    """Geocode a list of locations.
+    
+    Parameters:
+        locations (list[dict]): A list of locations which contains `hex_id`, `lat` and `lon` keys.
+    """
     logging.info(f"Geocoding {len(locations)} locations.")
     geolocator = Nominatim(user_agent="_")
     # Rate limit the geocoding requests to be nice to the service

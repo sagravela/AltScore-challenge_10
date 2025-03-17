@@ -1,13 +1,20 @@
 import gc
-from tqdm import tqdm
 
 import polars as pl
 import h3
+from tqdm import tqdm
 
 from scripts import logging
 from scripts import RAW_DATA_DIR, PROCESSED_DATA_DIR, MOBILITY_FILE, AGG_MOBILITY_FILE, RESOLUTION
 
 def add_hex(lat_col: str, lon_col: str, resolution: int) -> pl.Expr:
+    """Polars expression to add hex ids to a dataframe with latitude, longitude and resoulution.
+    
+    Parameters:
+        lat_col (str): The name of the latitude column.
+        lon_col (str): The name of the longitude column.
+        resolution (int): The resolution of the hex ids.
+    """
     return (
         pl.struct([lat_col, lon_col]).map_elements(
             lambda v: h3.latlng_to_cell(v.get(lat_col), v.get(lon_col), resolution),
@@ -16,12 +23,14 @@ def add_hex(lat_col: str, lon_col: str, resolution: int) -> pl.Expr:
     )
 
 def process_raw_data() -> pl.Expr:
+    """Polars expressions to process raw data. Adds `hex_id` column and converts `timestamp` to datetime."""
     return (
         add_hex('lat', 'lon', resolution=RESOLUTION),
         pl.from_epoch('timestamp', 's')
     )
 
-def aggregate(ms):   
+def aggregate(ms: pl.LazyFrame) -> pl.LazyFrame:
+    """Aggregate mobility data by hex id."""
     # Number of distinct devices by hex
     devices_count_by_hex = (
         ms.select(['hex_id', 'device_id'])
@@ -54,7 +63,16 @@ def aggregate(ms):
     # Join aggregated features and return. Left join to ensure all the hex_ids are returned.
     return devices_count_by_hex.join(duration_by_hex, on='hex_id', how='left')
     
-def batch_agg(df, agg_function, col: str, batch_size: int, output_path: str):   
+def batch_agg(df, agg_function, col: str, batch_size: int, output_path: str):
+    """Aggregate data in batches.
+    
+    Parameters:
+        df (pl.LazyFrame): The lazy dataframe to aggregate.
+        agg_function (function): The function to aggregate the data.
+        col (str): The column to aggregate by.
+        batch_size (int): The size of the batch.
+        output_path (str): The path to save the aggregated data.
+    """   
     logging.info("Starting data aggregation.")
     col_uniques = df.select(pl.col(col).unique()).collect()
     

@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+# Setup logging
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s-%(name)s-%(levelname)s - %(message)s', 
@@ -12,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parents[0]
 RAW_DATA_DIR = BASE_DIR / 'data' / 'raw'
 EXTERNAL_DATA_DIR = BASE_DIR / 'data' / 'external'
 PROCESSED_DATA_DIR = BASE_DIR / 'data' / 'processed'
-MODEL_DATA_DIR = BASE_DIR / 'data' / 'model'
+MODEL_DATA_DIR = BASE_DIR / 'model'
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 EXTERNAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -27,9 +28,10 @@ FE_FILE = 'fe_data.csv'
 FULL_DATASET = 'full_dataset.csv'
 STUDY_FILE = 'study.log'
 PARAMS_FILE = 'params.json'
+MODEL_FILE = 'model.joblib'
 SUBMISSION_FILE = 'submission.csv'
 
-# Variables
+# Hex resolution
 RESOLUTION = 8
 
 # External data source configuration

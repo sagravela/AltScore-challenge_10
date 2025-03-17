@@ -9,25 +9,27 @@ import catboost as cat
 import optuna
 
 from scripts import logging
-from scripts.model.train import load_data, preprocessing_pipeline
+from scripts.model.train import load_data, pipeline
 from scripts import MODEL_DATA_DIR, STUDY_FILE, PARAMS_FILE
 
 
 class OptunaOptimization:
-    def __init__(self, X_train: pl.DataFrame, y_train: pl.DataFrame, scorer: str):
+    """Hyperparameter tuning class with Optuna for a Regression task. Fine tunes XGBoost, LightGBM and CatBoost models."""
+    def __init__(self, X_train: pl.DataFrame, y_train, scorer: str):
         self.X_train = X_train
         self.y_train = y_train
         self.scorer = scorer
 
-        self.num_features = X_train.select(pl.selectors.integer(), pl.selectors.float()).columns
-        self.cat_features = X_train.select(pl.selectors.string(), pl.selectors.boolean()).columns
-
-    def pipeline(self, model):
-        pipe = preprocessing_pipeline(num_features= self.num_features, cat_features= self.cat_features)
-        pipe.steps.append(('regression_model', model))
-        return cross_val_score(pipe, self.X_train, self.y_train, scoring=self.scorer).mean()
+    def cv_evaluation(self, model):
+        """Adds the model to the pipeline and returns the average of cross-validation score.""" 
+        pipe = pipeline()
+        pipe.steps.append(("regression_model", model))
+        return cross_val_score(
+            pipe, self.X_train, self.y_train, scoring=self.scorer
+        ).mean()
 
     def objective_xgb(self, trial):
+        """Objective function for XGBoost model."""
         # Set model params range and model instance
         XGB_params = {
             "n_estimators": trial.suggest_int("n_estimators", 50, 300),
@@ -38,12 +40,14 @@ class OptunaOptimization:
             "gamma": trial.suggest_float("gamma", 0, 1),
             "reg_alpha": trial.suggest_float("reg_alpha", 0, 0.5),
             "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 2),
+            "n_jobs": None,  # In order to use all threads
             # "device": "cuda"
         }
         model = xgb.XGBRegressor(**XGB_params, verbosity=0)
-        return self.pipeline(model)
-        
+        return self.cv_evaluation(model)
+
     def objective_lgbm(self, trial):
+        """Objective function for LightGBM model."""
         LGBM_params = {
             "n_estimators": trial.suggest_int("n_estimators", 50, 300),
             "max_depth": trial.suggest_int("max_depth", 2, 6),
@@ -57,9 +61,10 @@ class OptunaOptimization:
             "min_split_gain": trial.suggest_float("min_split_gain", 0.0, 0.1),
         }
         model = lgb.LGBMRegressor(**LGBM_params, verbosity=-1)
-        return self.pipeline(model)
-        
+        return self.cv_evaluation(model)
+
     def objective_cat(self, trial):
+        """Objective function for CatBoost model."""
         CatBoost_params = {
             "iterations": trial.suggest_int("iterations", 50, 300),
             "depth": trial.suggest_int("depth", 2, 6),
@@ -69,30 +74,41 @@ class OptunaOptimization:
             "colsample_bylevel": trial.suggest_float("colsample_bylevel", 0.6, 0.9),
             "random_strength": trial.suggest_float("random_strength", 0.1, 1),
             "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 20),
-            "grow_policy": trial.suggest_categorical("grow_policy", ["Depthwise", "SymmetricTree"]),
+            "grow_policy": trial.suggest_categorical(
+                "grow_policy", ["Depthwise", "SymmetricTree"]
+            ),
             "allow_writing_files": False,
             # "task_type": "GPU" if trial.params.get("gpu", False) else "CPU"
         }
         model = cat.CatBoostRegressor(**CatBoost_params, verbose=0)
-        return self.pipeline(model)
+        return self.cv_evaluation(model)
 
     def optimize_params(self, model_name: str):
+        """Optimization loop. Initialize study (if doesn't exist, otherwise load it) and optimize the objective function.
+        To shutdown the optimization, press Ctrl-c. The best hyperparameters are saved in a json file.
+        """
         logging.info("Hyperparameter Tuning.")
-        objectives = {"xgb": self.objective_xgb, "lgbm": self.objective_lgbm, "cat": self.objective_cat}
+        objectives = {
+            "xgb": self.objective_xgb,
+            "lgbm": self.objective_lgbm,
+            "cat": self.objective_cat,
+        }
         objective = objectives[model_name]
         logging.info(f"Initializing study to model {model_name.upper()}.")
-        
+
         # Load storage
         storage = optuna.storages.JournalStorage(
-            optuna.storages.journal.JournalFileBackend(str(MODEL_DATA_DIR / STUDY_FILE)),
+            optuna.storages.journal.JournalFileBackend(
+                str(MODEL_DATA_DIR / STUDY_FILE)
+            ),
         )
 
         # Create a study
         study = optuna.create_study(
             storage=storage,
             study_name=f"{model_name}_study",
-            direction='maximize',
-            load_if_exists=True
+            direction="maximize",
+            load_if_exists=True,
         )
 
         # Optimize the objective function (model performance)
@@ -111,7 +127,9 @@ class OptunaOptimization:
 
             # Load existing parameters or initialize if file is missing/corrupt
             try:
-                params = json.loads(params_path.read_text()) if params_path.exists() else {}
+                params = (
+                    json.loads(params_path.read_text()) if params_path.exists() else {}
+                )
             except json.JSONDecodeError:
                 params = {}
 
@@ -128,13 +146,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model",
-        required = True,
-        choices = ['xgb', 'lgbm', 'cat'],
-        help = "Hyperparameter tuning with Optuna. Choose between xgb, lgbm and cat models. Shutdown with Ctrl-c.",
-        type = str
+        required=True,
+        choices=["xgb", "lgbm", "cat"],
+        help="Hyperparameter tuning with Optuna. Choose between xgb, lgbm and cat models. Shutdown with Ctrl-c.",
+        type=str,
     )
     args = parser.parse_args()
 
     X_train, y_train, _ = load_data()
-    opt = OptunaOptimization(X_train, y_train, 'neg_root_mean_squared_error')
+    opt = OptunaOptimization(X_train, y_train, "neg_root_mean_squared_error")
     opt.optimize_params(args.model)

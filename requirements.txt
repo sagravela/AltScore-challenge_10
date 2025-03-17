@@ -17,6 +17,7 @@ scikit-learn
 xgboost
 lightgbm
 catboost
+shap
 
 # Data visualization
 altair
@@ -26,3 +27,4 @@ folium
 requests
 tqdm
 optuna
+ipykernel

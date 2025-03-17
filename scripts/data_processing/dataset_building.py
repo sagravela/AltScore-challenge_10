@@ -4,14 +4,15 @@ from thefuzz import process
 from scripts import logging
 from scripts.external.census_2022 import spell_column
 from scripts import (
-    RAW_DATA_DIR, PROCESSED_DATA_DIR, RAW_TRAIN_FILE, TEST_FILE, 
+    RAW_DATA_DIR, PROCESSED_DATA_DIR, TRAIN_FILE, TEST_FILE, 
     AGG_MOBILITY_FILE, FE_FILE, FULL_DATASET, NOMINATIM_PATH, NOMINATIM_FILE, 
     CENSUS_PATH, CENSUS_FILE, NUMBEO_PATH, NUMBEO_PRICES_FILE, NUMBEO_QUALITY_FILE,
 )
 
-def load_data():
+def load_data() -> tuple:
+    """Load all the data from `data` folder."""
     logging.info(f"Loading data from {RAW_DATA_DIR}.")
-    raw_train = pl.read_csv(RAW_DATA_DIR / RAW_TRAIN_FILE)
+    raw_train = pl.read_csv(RAW_DATA_DIR / TRAIN_FILE)
     raw_test = pl.read_csv(RAW_DATA_DIR / TEST_FILE)
 
     logging.info(f"Loading data from {PROCESSED_DATA_DIR}.")
@@ -30,8 +31,12 @@ def load_data():
 
     return raw_train, raw_test, agg_mobility_df, census_df, nominatim_df, fe_df, prices_df, quality_df
 
-def prepare_nominatim_data(nominatim_df: pl.DataFrame, reference_df: pl.DataFrame):
-    """Prepare the Nominatim data for merging"""
+def prepare_nominatim_data(nominatim_df: pl.DataFrame, reference_df: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the Nominatim data for merging. This does the following:
+    - Map ISO codes to provinces.
+    - Coalesce columns in `province`, `county`, `district` and `neighbourhood`.
+    - Replace some edge cases and correct spelling.
+    """
 
     def correct_spelling(value, reference_list):
         """Function to correct spelling using fuzzy matching"""
@@ -98,7 +103,8 @@ def prepare_nominatim_data(nominatim_df: pl.DataFrame, reference_df: pl.DataFram
         )
     )
 
-def prepare_census_data(census_df: pl.DataFrame):
+def prepare_census_data(census_df: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the census data for merging. Transform some census features for their ratios."""
     def calculate_ratio(col1: str, col2: str) -> pl.Expr:
         return (pl.col(col1) / (pl.col(col1) + pl.col(col2)))
     
@@ -113,22 +119,13 @@ def prepare_census_data(census_df: pl.DataFrame):
         .drop(pl.selectors.ends_with('_n'))
     )
 
-def prepare_fe_data(df: pl.DataFrame):
-    return (
-        df
-        .select(
-            pl.col('hex_id'),
-            pl.col('closest_city'),
-            pl.when(pl.col('closest_city') == 'Cuenca')
-            .then(pl.col('cuenca_km'))
-            .when(pl.col('closest_city') == 'Guayaquil')
-            .then(pl.col('guayaquil_km'))
-            .otherwise(pl.col('quito_km'))
-            .alias('closest_city_km')
-        )
-    )
-
-def prepare_prices_data(df: pl.DataFrame):
+def prepare_prices_data(df: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the prices data for merging. This does the following:
+    - Remove hyphens.
+    - Cast to float.
+    - Fill missing values with mean.
+    - Aggregate by city and take mean.
+    """
     return (
         df
         .with_columns(pl.col(pl.String).replace('-', None))
@@ -138,8 +135,8 @@ def prepare_prices_data(df: pl.DataFrame):
         .mean()
     )
 
-def merge_data(raw_train, raw_test, agg_mobility_df, census_df, nominatim_df, fe_df, prices_df, quality_df):
-    """Merge all datasets"""
+def merge_data(raw_train, raw_test, agg_mobility_df, census_df, nominatim_df, fe_df, prices_df, quality_df) -> pl.DataFrame:
+    """Merge all datasets while ensuring consistency of the data."""
     
     # Merge Nominatim and census data to ensure not missing districts
     nominatim_census_df = (

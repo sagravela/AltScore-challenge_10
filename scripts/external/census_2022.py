@@ -8,6 +8,7 @@ from scripts import (
 )
 
 def load_data():
+    """Load census data from `CENSUS_PATH`."""
     logging.info(f"Loading data from {CENSUS_PATH}.")
     pop_df = pl.read_excel(CENSUS_PATH / CENSUS_POP_FILE, sheet_name='4.2')
     poor_df = pl.read_excel(CENSUS_PATH / CENSUS_POOR_FILE, sheet_name='1.2')
@@ -16,11 +17,18 @@ def load_data():
     return pop_df, poor_df, house_appliances_df, house_tic_df
 
 def clean_data(df: pl.DataFrame, cols_drop_ind: list[int], new_cols: list[str]) -> pl.DataFrame:
+    """Function to clean census data.
+
+    Parameters:
+        df (pl.DataFrame): The dataframe to clean.
+        cols_drop_ind (list[int]): A list of indices of columns to drop.
+        new_cols (list[str]): A list of new column names.
+    """
     return (
         df
         .drop([df.columns[i] for i in cols_drop_ind])  # Drop the first column
         .rename({old: new for old, new in zip([c for c in df.columns if df.columns.index(c) not in cols_drop_ind], new_cols)})
-        # Update 'county' where it contains 'Quito'
+        # Replace any text in `county` with 'Quito' word as 'Quito'
         .with_columns(
             pl.when(pl.col('county').str.contains('Quito'))
             .then(pl.lit('Quito'))
@@ -30,9 +38,15 @@ def clean_data(df: pl.DataFrame, cols_drop_ind: list[int], new_cols: list[str]) 
     )
 
 def spell_column(reference_df: pl.DataFrame, col: str, score: int) -> pl.Expr:
-    
+    """Polars expresion to correct spelling using fuzzy matching.
+
+    Parameters:
+        reference_df (pl.DataFrame): The reference dataframe which contains the vocabulary.
+        col (str): The column to correct spelling.
+        score (int): The score threshold for fuzzy matching.
+    """
     def correct_spelling(value, reference_list, threshold = 80):
-        """Function to correct spelling using fuzzy matching"""
+        """Helper function to correct spelling using fuzzy matching"""
         match, score = process.extractOne(value, reference_list)
         return match if score > threshold else value  # I've tuned the threshold
     return (
@@ -42,7 +56,11 @@ def spell_column(reference_df: pl.DataFrame, col: str, score: int) -> pl.Expr:
     )
 
 def prep_pop_data(pop_df: pl.DataFrame) -> pl.DataFrame:
-    """Prepare the population data"""
+    """Prepare the census population data.
+
+    Parameters:
+        pop_df (pl.DataFrame): The dataframe to prepare.
+    """
     new_cols = ['province', 'county', 'district', 'pop_density_km2']
     cols_drop_ind = [0, 4, 5]
     return (
@@ -51,11 +69,18 @@ def prep_pop_data(pop_df: pl.DataFrame) -> pl.DataFrame:
     )
 
 def prep_poor_data(poor_df: pl.DataFrame, reference_df: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the census poverty data.
+    
+    Parameters:
+        poor_df (pl.DataFrame): The dataframe to prepare.
+        reference_df (pl.DataFrame): The reference dataframe which contains the vocabulary.
+    """
     new_cols = ['province', 'county', 'district', 'area', 'poor_pop_n', 'poor_pop_y']
     cols_drop_ind = [0, 5, 6, 7, 9, 10]
     return (
         clean_data(poor_df, cols_drop_ind, new_cols)
         .slice(7, poor_df.height - 10)
+        # I only care for total values in `area`
         .filter(pl.col('area').str.contains('Total'))
         .drop('area')
         .with_columns(
@@ -64,6 +89,12 @@ def prep_poor_data(poor_df: pl.DataFrame, reference_df: pl.DataFrame) -> pl.Data
     )
 
 def prep_house_appliances_data(house_appliances_df: pl.DataFrame, reference_df: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the census house appliances data.
+    
+    Parameters:
+        house_appliances_df (pl.DataFrame): The dataframe to prepare.
+        reference_df (pl.DataFrame): The reference dataframe which contains the vocabulary.
+    """
     new_cols = ['province', 'county', 'area', 'refrigerator_y', 'refrigerator_n', 'washing_machine_y', 'washing_machine_n', 'dryer_y', 'dryer_n', 'micro_y', 'micro_n', 'extractor_y', 'extractor_n', 'car_y', 'car_n', 'moto_y', 'moto_n']
     cols_drop_ind = [0]
     return (
@@ -77,6 +108,12 @@ def prep_house_appliances_data(house_appliances_df: pl.DataFrame, reference_df: 
     )
 
 def prep_house_tic_data(house_tic_df: pl.DataFrame, reference_df: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the census house tic data.
+    
+    Parameters:
+        house_tic_df (pl.DataFrame): The dataframe to prepare.
+        reference_df (pl.DataFrame): The reference dataframe which contains the vocabulary.
+    """
     new_cols = ['province', 'county', 'district', 'tel_y', 'tel_n', 'cel_y', 'cel_n', 'tv_y', 'tv_n', 'internet_y', 'internet_n', 'computer_y', 'computer_n']
     cols_drop_ind = [0]
     return (
@@ -89,6 +126,14 @@ def prep_house_tic_data(house_tic_df: pl.DataFrame, reference_df: pl.DataFrame) 
     )
 
 def merge_data(pop_df: pl.DataFrame, poor_df: pl.DataFrame, house_appliances_df: pl.DataFrame, house_tic_df: pl.DataFrame) -> pl.DataFrame:
+    """Merge the prepared census datasets.
+    
+    Parameters:
+        pop_df (pl.DataFrame): The prepared population dataframe.
+        poor_df (pl.DataFrame): The prepared poverty dataframe.
+        house_appliances_df (pl.DataFrame): The prepared house appliances dataframe.
+        house_tic_df (pl.DataFrame): The prepared house tic dataframe.
+    """
     logging.info("Datasets prepared. Ready for merge.")
     return (
         pop_df
@@ -105,7 +150,7 @@ def merge_data(pop_df: pl.DataFrame, poor_df: pl.DataFrame, house_appliances_df:
 
 if __name__ == "__main__":
     pop_df, poor_df, house_appliances_df, house_tic_df = load_data()
-    # I will use the population data as vocabulary reference for fuzzy matching
+    # I will use the population data locations as vocabulary reference for fuzzy matching.
     reference_df = prep_pop_data(pop_df)
     merge_data(
         reference_df,
